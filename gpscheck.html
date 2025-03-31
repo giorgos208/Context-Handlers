@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GPS Coordinates Radius Checker</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 30px;
+    }
+    h1 {
+      margin-bottom: 15px;
+      display: inline-block; 
+      vertical-align: middle;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    input {
+      width: 300px;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px;
+      cursor: pointer;
+    }
+    #result {
+      margin-top: 20px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 10px;
+    }
+
+ 
+    .tooltip-container {
+      position: relative;
+      display: inline-block;
+      margin-left: 8px; 
+      cursor: help;
+    }
+
+    .tooltip-icon {
+      background-color: #eee;
+      border: 1px solid #999;
+      border-radius: 50%;
+      padding: 0 6px;
+      text-align: center;
+      font-size: 0.9em;
+      line-height: 1.5em;
+      display: inline-block;
+    }
+   
+    .tooltiptext {
+      visibility: hidden;
+      width: 400px;
+      background-color: #333;
+      color: #fff;
+      text-align: left;
+      padding: 10px;
+      border-radius: 6px;
+      position: absolute;
+      z-index: 999;
+      top: 110%;           
+      left: 50%;
+      transform: translateX(-50%);
+      margin-top: 8px;     
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      white-space: pre-line; 
+      font-size: 0.9em;
+      pointer-events: auto; 
+    }
+  </style>
+</head>
+<body>
+
+<h1>GPS Coordinates Radius Checker</h1>
+<!-- Tooltip with real Athens examples -->
+<div class="tooltip-container" id="tooltipContainer">
+  <span class="tooltip-icon">(?)
+    <div class="tooltiptext" id="tooltipText">
+<b>REAL ATHENS EXAMPLES</b>
+
+1) Short Distance (Acropolis)
+   - Center: (37.9838, 23.7275) [Central Athens]
+   - Test:   (37.9715, 23.7257) [Acropolis]
+   - Radius: 2000 m
+   - Expected: Within radius (true)
+
+2) Medium Distance (OAKA Stadium)
+   - Center: (37.9838, 23.7275)
+   - Test:   (38.0365, 23.7875)
+   - Radius: 10000 m
+   - Expected: Within radius (true)
+
+3) Longer Distance (Piraeus Port)
+   - Center: (37.9838, 23.7275)
+   - Test:   (37.9421, 23.6465)
+   - Radius: 5000 m
+   - Expected: Outside radius (false)
+
+4) Much Longer Distance (Airport)
+   - Center: (37.9838, 23.7275)
+   - Test:   (37.9364, 23.9445)
+   - Radius: 20000 m
+   - Expected: ~19-20 km => borderline true/false
+    </div>
+  </span>
+</div>
+
+<!-- Input Fields -->
+<label for="centerLat">Center Latitude:</label>
+<input id="centerLat" type="text" placeholder="e.g. 37.9838 (Central Athens)">
+
+<label for="centerLon">Center Longitude:</label>
+<input id="centerLon" type="text" placeholder="e.g. 23.7275">
+
+<label for="testLat">Test Latitude:</label>
+<input id="testLat" type="text" placeholder="e.g. 37.9715 (Acropolis)">
+
+<label for="testLon">Test Longitude:</label>
+<input id="testLon" type="text" placeholder="e.g. 23.7257">
+
+<label for="radius">Radius (meters):</label>
+<input id="radius" type="text" placeholder="e.g. 2000 (2 km)">
+
+<button id="checkBtn">Check</button>
+
+<div id="result"></div>
+
+<script>
+ 
+  const tooltipContainer = document.getElementById('tooltipContainer');
+  const tooltipText = document.getElementById('tooltipText');
+  let hideTimer = null;
+
+  function showTooltip() {
+    // Cancel any pending hide
+    clearTimeout(hideTimer);
+    tooltipText.style.visibility = 'visible';
+    tooltipText.style.opacity = '1';
+  }
+
+  function hideTooltip() {
+    tooltipText.style.visibility = 'hidden';
+    tooltipText.style.opacity = '0';
+  }
+
+  tooltipContainer.addEventListener('mouseenter', showTooltip);
+  tooltipText.addEventListener('mouseenter', showTooltip);
+
+  // When leaving container or the tooltip text, start a 3s timer to hide
+  tooltipContainer.addEventListener('mouseleave', () => {
+    hideTimer = setTimeout(hideTooltip, 3000);
+  });
+  tooltipText.addEventListener('mouseleave', () => {
+    hideTimer = setTimeout(hideTooltip, 3000);
+  });
+
+  // ===== Haversine Distance in meters =====
+  function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // Earth radius in meters
+    const toRad = x => x * Math.PI / 180;
+    
+    const φ1 = toRad(lat1);
+    const φ2 = toRad(lat2);
+    const Δφ = toRad(lat2 - lat1);
+    const Δλ = toRad(lon2 - lon1);
+
+    const a = Math.sin(Δφ / 2) ** 2 +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // in meters
+  }
+
+  // Validate input is a number in a reasonable lat/lon range
+  function isValidCoordinate(value, isLat = true) {
+    if (isNaN(value)) return false;
+    const num = parseFloat(value);
+    if (isLat) {
+      // Latitude range is -90 to 90
+      return (num >= -90 && num <= 90);
+    } else {
+      // Longitude range is -180 to 180
+      return (num >= -180 && num <= 180);
+    }
+  }
+
+  // Main function to check radius
+  function checkCoordinates() {
+    const centerLatStr = document.getElementById('centerLat').value.trim();
+    const centerLonStr = document.getElementById('centerLon').value.trim();
+    const testLatStr   = document.getElementById('testLat').value.trim();
+    const testLonStr   = document.getElementById('testLon').value.trim();
+    const radiusStr    = document.getElementById('radius').value.trim();
+    const resultEl     = document.getElementById('result');
+
+    resultEl.textContent = ''; // clear previous
+
+    // Validate not empty
+    if (!centerLatStr || !centerLonStr || !testLatStr || !testLonStr || !radiusStr) {
+      resultEl.textContent = 'Error: Please fill in all fields.';
+      return;
+    }
+
+    // Validate numeric
+    if (
+      !isValidCoordinate(centerLatStr, true) ||
+      !isValidCoordinate(centerLonStr, false) ||
+      !isValidCoordinate(testLatStr, true) ||
+      !isValidCoordinate(testLonStr, false) ||
+      isNaN(radiusStr)
+    ) {
+      resultEl.textContent = 'Error: Invalid input. Check lat/lon ranges and numeric radius.';
+      return;
+    }
+
+    // Convert to float
+    const centerLat = parseFloat(centerLatStr);
+    const centerLon = parseFloat(centerLonStr);
+    const testLat   = parseFloat(testLatStr);
+    const testLon   = parseFloat(testLonStr);
+    const radiusMeters = parseFloat(radiusStr);
+
+    // Calculate distance
+    const distance = haversineDistanceMeters(centerLat, centerLon, testLat, testLon);
+
+    // Compare distance to radius
+    const isWithin = distance <= radiusMeters;
+
+    // Build detailed result object
+    const resultObj = {
+      centerCoordinate: { lat: centerLat, lon: centerLon },
+      testCoordinate:   { lat: testLat,   lon: testLon },
+      radiusMeters:     radiusMeters,
+      distanceMeters:   Number(distance.toFixed(2)), // round for readability
+      isWithinRadius:   isWithin
+    };
+
+    // Display result in a readable JSON-like format
+    resultEl.textContent = JSON.stringify(resultObj, null, 2);
+  }
+
+  // Attach event
+  document.getElementById('checkBtn').addEventListener('click', checkCoordinates);
+</script>
+</body>
+</html>
