@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IP City Checker (Cross-Check)</title>
+
+  <!--
+    Content Security Policy:
+      - default-src 'self': everything is same-origin by default
+      - connect-src restricted to our five geolocation APIs plus 'self' if needed
+      - script-src uses a nonce to allow exactly our one <script> block
+      - style-src allows 'self' + 'unsafe-inline' (for inline CSS)
+      - img-src 'self' to allow images from same origin if needed
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    connect-src 'self' https://ip-api.com https://ipapi.co https://ipwho.is https://freeipapi.com https://www.geoplugin.net;
+    script-src 'self' 'nonce-abc123';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self';
+  ">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 50px;
+    }
+    h1 {
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input {
+      padding: 8px;
+      width: 300px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #4CAF50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 1.2em;
+      font-weight: bold;
+    }
+    .error {
+      color: red;
+      font-weight: normal;
+    }
+    .info {
+      margin-top: 10px;
+      font-size: 0.9em;
+      color: #666;
+      white-space: pre-wrap; /* preserves line breaks in displayed text */
+    }
+
+    .tooltip-icon {
+      cursor: help;
+      color: #555;
+      margin-left: 5px;
+      border: 1px solid #999;
+      border-radius: 50%;
+      padding: 0 5px;
+      text-align: center;
+      display: inline-block;
+      font-size: 0.9em;
+      line-height: 1.2em;
+      position: relative;
+    }
+    .tooltiptext {
+      visibility: hidden;
+      opacity: 0;
+      width: 320px;
+      background-color: #333;
+      color: #fff;
+      text-align: left;
+      padding: 8px;
+      border-radius: 4px;
+      position: absolute;
+      z-index: 999;
+      top: 120%;
+      left: 50%;
+      transform: translateX(-50%);
+      transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+      pointer-events: auto; /* allow selecting/copying text */
+    }
+  </style>
+</head>
+<body>
+
+<h1>IP City Checker (Cross-Check)</h1>
+
+<label for="ipInput">
+  IP Address (IPv4 or IPv6):
+  <span class="tooltip-icon" id="tooltipIcon">
+    (?)
+    <!-- Tooltip content with real Greek IPv4/IPv6 examples -->
+    <span class="tooltiptext" id="tooltipText">
+Real IPv4/IPv6 Examples:
+
+=== Athens ===
+IPv4:
+  - 62.103.147.55
+  - 195.46.24.91
+IPv6:
+  - 2a02:587:d0e:f6c0:a8e4:8b85:3df0:ce09
+  - 2a02:587:b828:3494:18cf:9a96:4741:45c9
+
+=== Patra ===
+IPv4:
+  - 2.84.248.40
+  - 62.1.90.144
+IPv6:
+  - 2a02:587:786f:8200:7826:4209:481f:5eea
+  - 2a02:587:7939:9200:d517:bcd0:b1f:be27
+
+=== Thessaloniki ===
+IPv4:
+  - 94.67.108.248
+  - 89.210.197.34
+IPv6:
+  - 2a02:587:5416:6800:850e:9d45:ad98:11e4
+  - 2a02:587:4809:d00:71f8:82f2:772f:7448
+    </span>
+  </span>
+</label>
+<input type="text" id="ipInput" placeholder="Try e.g. 62.103.147.55" maxlength="100" />
+
+<label for="cityInput">Expected City:</label>
+<input type="text" id="cityInput" placeholder="e.g. Athens" maxlength="100" />
+
+<!-- Removed onclick; we will attach event with JS below -->
+<button id="checkBtn">Check</button>
+
+<div id="result"></div>
+<div id="details" class="info"></div>
+
+<!-- 
+  Use a nonce, matching the one in script-src. 
+  This allows the script to run without inline restrictions.
+  Also remove inline event handlers, so we do everything in JS below.
+-->
+<script nonce="abc123">
+  // ==========  Tooltip Logic (3s hide delay)  ==========
+  const tooltipIcon = document.getElementById('tooltipIcon');
+  const tooltipText = document.getElementById('tooltipText');
+  let hideTimer = null;
+
+  function showTooltip() {
+    clearTimeout(hideTimer);
+    tooltipText.style.visibility = 'visible';
+    tooltipText.style.opacity = '1';
+  }
+
+  function hideTooltip() {
+    tooltipText.style.visibility = 'hidden';
+    tooltipText.style.opacity = '0';
+  }
+
+  tooltipIcon.addEventListener('mouseenter', showTooltip);
+  tooltipText.addEventListener('mouseenter', showTooltip);
+  tooltipIcon.addEventListener('mouseleave', () => {
+    hideTimer = setTimeout(hideTooltip, 3000);
+  });
+  tooltipText.addEventListener('mouseleave', () => {
+    hideTimer = setTimeout(hideTooltip, 3000);
+  });
+
+  // ==========  Regex Checks for IPv4 & IPv6  ==========
+  const ipv4Regex = /^(25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/;
+  const ipv6Regex = /^(([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:)|(([0-9A-Fa-f]{1,4}:){1,7}:)|(([0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4})|(([0-9A-Fa-f]{1,4}:){1,5}(:[0-9A-Fa-f]{1,4}){1,2})|(([0-9A-Fa-f]{1,4}:){1,4}(:[0-9A-Fa-f]{1,4}){1,3})|(([0-9A-Fa-f]{1,4}:){1,3}(:[0-9A-Fa-f]{1,4}){1,4})|(([0-9A-Fa-f]{1,4}:){1,2}(:[0-9A-Fa-f]{1,4}){1,5})|([0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|::([0-9A-Fa-f]{1,4}:){1,5}[0-9A-Fa-f]{1,4}|([0-9A-Fa-f]{1,4}:){1,7}:|:)((25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3})?$/i;
+
+  // ==========  City Synonyms  ==========
+  const citySynonyms = {
+    // Athens area
+    'athens': 'athens',
+    'marousi': 'athens',
+    'amarousion': 'athens',
+    'piraeus': 'athens',
+    // Patra synonyms
+    'patra': 'patra',
+    'patras': 'patra',
+    'patra city': 'patra',
+    // Thessaloniki synonyms
+    'thessaloniki': 'thessaloniki',
+    'thessalonica': 'thessaloniki',
+    'salonika': 'thessaloniki',
+    'salonica': 'thessaloniki',
+  };
+
+  // ==========  Known City Coordinates  ==========
+  const cityCoords = {
+    'athens':       { lat: 37.9838, lon: 23.7275 },
+    'patra':        { lat: 38.2466, lon: 21.7346 },
+    'thessaloniki': { lat: 40.6401, lon: 22.9444 },
+  };
+
+  // Haversine formula to compute distance in km
+  function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth radius in kilometers
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) *
+              Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.asin(Math.sqrt(a));
+    return R * c;
+  }
+
+  const DISTANCE_THRESHOLD_KM = 20;
+
+  // ==========  Five free IP geolocation APIs  ==========
+  const apiEndpoints = [
+    ip => fetch(`https://ip-api.com/json/${ip}?fields=status,message,city,lat,lon`)
+      .then(res => res.json())
+      .then(d => d.status === 'success'
+        ? { city: d.city || '', lat: d.lat, lon: d.lon }
+        : null
+      ),
+    ip => fetch(`https://ipapi.co/${ip}/json/`)
+      .then(res => res.json())
+      .then(d => d.error
+        ? null
+        : { city: d.city || '', lat: d.latitude, lon: d.longitude }
+      ),
+    ip => fetch(`https://ipwho.is/${ip}`)
+      .then(res => res.json())
+      .then(d => d.success
+        ? { city: d.city || '', lat: d.latitude, lon: d.longitude }
+        : null
+      ),
+    ip => fetch(`https://freeipapi.com/api/json/${ip}`)
+      .then(res => res.json())
+      .then(d => d.cityName
+        ? { city: d.cityName, lat: d.latitude, lon: d.longitude }
+        : null
+      ),
+    ip => fetch(`https://www.geoplugin.net/json.gp?ip=${ip}`)
+      .then(res => res.json())
+      .then(d => {
+        if (!d.geoplugin_city) return null;
+        return {
+          city: d.geoplugin_city,
+          lat: parseFloat(d.geoplugin_latitude),
+          lon: parseFloat(d.geoplugin_longitude)
+        };
+      })
+  ];
+
+  // Sanitize text for output to avoid XSS
+  function sanitizeText(str) {
+    return str.replace(/[<>&"']/g, c => {
+      switch(c) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case '"': return '&quot;';
+        case '\'':return '&#39;';
+      }
+      return c;
+    });
+  }
+
+  // ==========  Main Logic  ==========
+  function checkIP() {
+    const ip = document.getElementById('ipInput').value.trim();
+    let expectedCity = document.getElementById('cityInput').value.trim().toLowerCase();
+
+    const resultEl = document.getElementById('result');
+    const detailsEl = document.getElementById('details');
+
+    // Clear previous results
+    resultEl.textContent = '';
+    detailsEl.textContent = '';
+
+    // Basic length checks
+    if (ip.length > 100 || expectedCity.length > 100) {
+      resultEl.innerHTML = '<span class="error">Input too long.</span>';
+      return;
+    }
+    if (!ip || !expectedCity) {
+      resultEl.innerHTML = '<span class="error">Please provide both IP and City.</span>';
+      return;
+    }
+    if (!ipv4Regex.test(ip) && !ipv6Regex.test(ip)) {
+      resultEl.innerHTML = '<span class="error">Invalid IP format. Enter a valid IPv4 or IPv6 address.</span>';
+      return;
+    }
+
+    // Convert synonyms for typed city
+    if (citySynonyms[expectedCity]) {
+      expectedCity = citySynonyms[expectedCity];
+    }
+
+    // Make parallel requests
+    Promise.allSettled(apiEndpoints.map(api => api(ip)))
+      .then(results => {
+        let successfulLookups = 0;
+        let matchingCount = 0;
+        let cityDetails = [];
+
+        results.forEach((res, idx) => {
+          if (res.status !== 'fulfilled' || res.value === null) {
+            cityDetails.push(`API #${idx + 1}: (failed or no data)`);
+            return;
+          }
+
+          successfulLookups++;
+          const { city, lat, lon } = res.value;
+          let returnedCity = city.trim().toLowerCase();
+
+          // If the returned city is a known synonym
+          if (citySynonyms[returnedCity]) {
+            returnedCity = citySynonyms[returnedCity];
+          }
+
+          // (1) Check direct name match
+          if (returnedCity === expectedCity) {
+            matchingCount++;
+            cityDetails.push(`API #${idx + 1}: "${sanitizeText(city)}" (name match)`);
+            return;
+          }
+
+          // (2) Distance check
+          if (lat && lon && cityCoords[expectedCity]) {
+            const expectedLat = cityCoords[expectedCity].lat;
+            const expectedLon = cityCoords[expectedCity].lon;
+            const distanceKm = haversineDistance(lat, lon, expectedLat, expectedLon);
+
+            if (distanceKm <= DISTANCE_THRESHOLD_KM) {
+              matchingCount++;
+              cityDetails.push(
+                `API #${idx + 1}: "${sanitizeText(city)}" (distance ${distanceKm.toFixed(1)} km => counted as ${sanitizeText(expectedCity)})`
+              );
+              return;
+            }
+          }
+
+          // No match
+          cityDetails.push(`API #${idx + 1}: "${sanitizeText(city)}" (no match)`);
+        });
+
+        // If zero lookups succeeded
+        if (successfulLookups === 0) {
+          resultEl.innerHTML = '<span class="error">All lookups failed or returned no city data.</span>';
+          detailsEl.textContent = cityDetails.join('\n');
+          return;
+        }
+
+        // Over 50% threshold => 'true'
+        const matchRatio = matchingCount / successfulLookups;
+        const isMatch = matchRatio > 0.5;
+
+        resultEl.textContent = isMatch ? 'true' : 'false';
+        // Safely build details with <br>
+        detailsEl.innerHTML = `
+Match ratio: ${(matchRatio * 100).toFixed(1)}% ( ${matchingCount} / ${successfulLookups} )<br>
+${cityDetails.map(line => sanitizeText(line)).join('<br>')}
+        `.trim();
+      })
+      .catch(error => {
+        console.error(error);
+        resultEl.innerHTML = '<span class="error">An unexpected error occurred.</span>';
+      });
+  }
+
+  // Bind the event in JS instead of inline
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('checkBtn');
+    btn.addEventListener('click', checkIP);
+  });
+</script>
+</body>
+</html>
